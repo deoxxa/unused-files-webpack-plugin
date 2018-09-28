@@ -32,7 +32,10 @@ function getFileDepsMap(compilation) {
 async function applyAfterEmit(compiler, compilation, plugin) {
   try {
     const globOptions = globOptionsWith(compiler, plugin.globOptions);
-    const fileDepsMap = getFileDepsMap(compilation);
+
+    await Promise.all(plugin.promises);
+
+    const fileDepsMap = plugin.fileDepsMap;
 
     const files = await globAll(
       plugin.options.patterns || plugin.options.pattern,
@@ -78,10 +81,26 @@ See https://www.npmjs.com/package/glob-all#notes
       ignore: `node_modules/**/*`,
       ...options.globOptions
     };
+
+    this.promises = [];
+    this.fileDepsMap = {};
   }
 
   apply(compiler) {
-    compiler.plugin(`after-emit`, (compilation, done) =>
+    this.promises.push(
+      new Promise(resolve => {
+        compiler.plugin("after-emit", (compilation, done) => {
+          this.fileDepsMap = {
+            ...this.fileDepsMap,
+            ...getFileDepsMap(compilation)
+          };
+          done();
+          resolve();
+        });
+      })
+    );
+
+    compiler.plugin("after-emit", (compilation, done) =>
       applyAfterEmit(compiler, compilation, this).then(done, done)
     );
   }
